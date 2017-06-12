@@ -5,11 +5,13 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+        "time"
 )
 
 const (
@@ -67,6 +69,31 @@ func TestMethodHandler(t *testing.T) {
 		if body := rec.Body.String(); body != test.body {
 			t.Fatalf("%d: wrong body, got %q want %q", i, body, test.body)
 		}
+	}
+}
+
+func TestCallbackLoggingHandler(t *testing.T) {
+	var output string
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		req.URL.Path = "/" // simulate http.StripPrefix and friends
+		time.Sleep(10 * time.Millisecond)
+		w.WriteHeader(200)
+	})
+
+	callback := func(r *http.Request, ts time.Time, status, size int) {
+		duration := time.Now().Sub(ts)
+		if duration < (10 * time.Millisecond) {
+			t.Fatalf("Expected duration greater than %dns, got: %dns", 10*time.Millisecond, duration.Nanoseconds())
+		}
+		output = fmt.Sprintf("%s %d %d", r.URL.Path, status, size)
+	}
+	logger := CallbackLoggingHandler(callback, handler)
+
+	logger.ServeHTTP(httptest.NewRecorder(), newRequest("GET", "/subdir/asdf"))
+
+	if output != "/ 200 0" {
+		t.Fatalf("Got %#v, wanted %#v", output, "/ 200 0")
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+        "time"
 )
 
 // MethodHandler is an http.Handler that dispatches to a handler whose key in the
@@ -41,6 +42,20 @@ func (h MethodHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+// callbackLoggingHandler is http.Handler implementation for
+// CallbackLoggingHandler
+type callbackLoggingHandler struct {
+	callback func(req *http.Request, t time.Time, status, size int)
+	handler  http.Handler
+}
+
+func (h callbackLoggingHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	t := time.Now()
+	logger := makeLogger(w)
+	h.handler.ServeHTTP(logger, req)
+	h.callback(req, t, logger.Status(), logger.Size())
 }
 
 // responseLogger is wrapper of http.ResponseWriter that keeps track of its HTTP
@@ -105,6 +120,26 @@ type hijackCloseNotifier struct {
 	loggingResponseWriter
 	http.Hijacker
 	http.CloseNotifier
+}
+
+// CallbackLoggingHandler returns a http.Handler that wraps h and calls the
+// callback r at the end of each request. The callback may be used to log the
+// request in the desired format.
+//
+// Example:
+//
+//  r := mux.NewRouter()
+//  r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+//  	w.Write([]byte("This is a catch-all route"))
+//  })
+//  cb := func(r *http.Request, ts time.Time, status, size int) {
+//		duration := time.Now().Sub(ts)
+//		log.Printf("%s %d %.6f", r.RequestURI, status, duration)
+//  }
+//  loggedRouter := handlers.CallbackLoggingHandler(os.Stdout, r)
+//  http.ListenAndServe(":1123", loggedRouter)
+func CallbackLoggingHandler(cb func(r *http.Request, t time.Time, status, size int), h http.Handler) http.Handler {
+	return callbackLoggingHandler{cb, h}
 }
 
 // isContentType validates the Content-Type header matches the supplied

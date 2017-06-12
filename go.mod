@@ -1,1 +1,3 @@
-module github.com/gorilla/handlers
+module github.com/ef-ctx/handlers
+
+go 1.12
